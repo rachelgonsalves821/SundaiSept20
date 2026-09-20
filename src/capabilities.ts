@@ -1,7 +1,13 @@
 import { z } from "zod";
 
-export const Capability = z.enum(["read_profile", "read_courses", "read_assignments"]);
-export type Capability = z.infer<typeof Capability>;
+export const CAPABILITIES = Object.freeze([
+  "read_profile",
+  "read_courses",
+  "read_assignments",
+] as const);
+
+export type Capability = (typeof CAPABILITIES)[number];
+export const Capability = z.enum([...CAPABILITIES] as [Capability, ...Capability[]]);
 
 export class PermissionDeniedError extends Error {
   constructor(public readonly capability: Capability) {
