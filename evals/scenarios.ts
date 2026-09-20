@@ -32,6 +32,17 @@ function courseIdMatching(last: unknown, pattern: RegExp): number {
 }
 
 const nonEmptyString = (value: unknown) => typeof value === "string" && value.trim().length > 0;
+const includes = (needle: string) => (value: unknown) => Array.isArray(value) && value.includes(needle);
+
+/** Pulls the tool names out of a resolve_intent plan, the way an agent would. */
+function plannedTools(last: unknown): string[] {
+  const plan = (last as { plan?: unknown } | null)?.plan;
+  if (!Array.isArray(plan)) throw new Error("resolve_intent returned no `plan` array to execute");
+  return plan.map((step: Record<string, unknown>) => {
+    if (typeof step?.tool !== "string") throw new Error("a plan step named no tool");
+    return step.tool;
+  });
+}
 
 export const scenarios: readonly Scenario[] = [
   // ---------------------------------------------------------------- chaining
@@ -236,6 +247,158 @@ export const scenarios: readonly Scenario[] = [
       },
     ],
     expectGatewayCalls: ["listAssignments"],
+  },
+
+  // ------------------------------------------------------------ intent routing
+  {
+    id: "intent-routes-study-request-through-its-own-plan",
+    category: "intent-routing",
+    prompt: "What's on the biology quiz?",
+    capabilities: "read_courses,read_assignments",
+    steps: [
+      {
+        tool: "resolve_intent",
+        args: { intent: "prepare_for_assessment" },
+        expectFacts: [
+          { path: "status", equals: "ready" },
+          { path: "missing", equals: [] },
+          { path: "plan.0.tool", equals: "list_courses" },
+          { path: "plan.1.tool", equals: "list_assignments" },
+          {
+            path: "plan.1.arguments_from",
+            satisfies: nonEmptyString,
+            describe: "the chained step says where its arguments come from",
+          },
+        ],
+      },
+      {
+        // Executes the plan it was handed rather than a hard-coded sequence:
+        // if resolve_intent starts naming a different first tool, this breaks.
+        tool: "list_courses",
+        argsFrom: ({ last }) => {
+          const tools = plannedTools(last);
+          if (tools[0] !== "list_courses") throw new Error(`plan opened with ${tools[0]}, not list_courses`);
+          return {};
+        },
+      },
+      {
+        tool: "list_assignments",
+        argsFrom: ({ last }) => ({ course_id: courseIdMatching(last, /biology/i) }),
+        expectFacts: [{ path: "assignments.0.name", equals: "Week 1 Reflection" }],
+      },
+    ],
+    // Resolving an intent must cost nothing upstream.
+    expectGatewayCalls: ["listCourses", "listAssignments"],
+  },
+  {
+    id: "intent-refuses-submission-before-touching-canvas",
+    category: "intent-routing",
+    prompt: "Submit my Week 1 Reflection for me.",
+    capabilities: "read_profile,read_courses,read_assignments",
+    steps: [
+      {
+        // Unsupported even with every capability on: this is a property of the
+        // connector, not of the deployment's configuration.
+        tool: "resolve_intent",
+        args: { intent: "submit_assignment" },
+        expectFacts: [
+          { path: "status", equals: "unsupported" },
+          { path: "reason", equals: "read_only_connector" },
+          { path: "plan", equals: undefined },
+          { path: "guidance", satisfies: nonEmptyString, describe: "the refusal explains itself to the user" },
+          {
+            path: "alternatives",
+            satisfies: includes("prepare_for_assessment"),
+            describe: "the refusal still points somewhere useful",
+          },
+        ],
+      },
+    ],
+    expectGatewayCalls: [],
+  },
+  {
+    id: "intent-separates-taking-a-quiz-from-preparing-for-one",
+    category: "intent-routing",
+    prompt: "Can you just take my biology quiz?",
+    capabilities: "read_courses,read_assignments",
+    steps: [
+      {
+        tool: "resolve_intent",
+        args: { intent: "take_quiz" },
+        expectFacts: [
+          { path: "status", equals: "unsupported" },
+          { path: "reason", equals: "read_only_connector" },
+          { path: "alternatives", satisfies: includes("prepare_for_assessment"), describe: "offers preparation instead" },
+        ],
+      },
+      {
+        // The neighbouring intent must actually be servable, or the redirect
+        // above is a dead end.
+        tool: "resolve_intent",
+        args: { intent: "prepare_for_assessment" },
+        expectFacts: [{ path: "status", equals: "ready" }],
+      },
+    ],
+    expectGatewayCalls: [],
+  },
+  {
+    id: "intent-reports-a-capability-gap-without-a-denied-call",
+    category: "intent-routing",
+    prompt: "What's due this week?",
+    capabilities: "read_courses",
+    steps: [
+      {
+        tool: "resolve_intent",
+        args: { intent: "review_upcoming_work" },
+        expectFacts: [
+          { path: "status", equals: "blocked_by_capability" },
+          { path: "missing", equals: ["read_assignments"] },
+          {
+            path: "guidance",
+            satisfies: (value) => typeof value === "string" && value.includes("CANVAS_CAPABILITIES"),
+            describe: "names the setting an operator would change",
+          },
+        ],
+      },
+    ],
+    // The gap is learned from the registry, not by burning a denied Canvas call.
+    expectGatewayCalls: [],
+  },
+  {
+    id: "intent-unknown-is-reported-as-fixable",
+    category: "intent-routing",
+    prompt: "Delete all my Canvas data.",
+    capabilities: "read_courses",
+    steps: [
+      {
+        tool: "resolve_intent",
+        args: { intent: "delete_everything" },
+        expectErrorCode: "INVALID_INPUT",
+        expectDisposition: "fix_arguments",
+      },
+    ],
+    expectGatewayCalls: [],
+  },
+  {
+    id: "intent-catalogue-is-matchable-and-status-aware",
+    category: "intent-routing",
+    prompt: "What can you actually help me with in Canvas?",
+    capabilities: "read_courses",
+    steps: [
+      {
+        tool: "list_intents",
+        expectFacts: [
+          { path: "intents.0.status", satisfies: nonEmptyString, describe: "every entry carries a status" },
+          {
+            path: "intents",
+            satisfies: (value) =>
+              Array.isArray(value) && value.every((intent) => Array.isArray(intent?.examples) && intent.examples.length > 0),
+            describe: "every intent offers example phrasings to match a request against",
+          },
+        ],
+      },
+    ],
+    expectGatewayCalls: [],
   },
 
   // ------------------------------------------------------------ secret hygiene

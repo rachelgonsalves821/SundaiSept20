@@ -32,6 +32,7 @@ const CANVAS_URL = "https://canvas.example.invalid";
 export type Category =
   | "capability-enforcement"
   | "chaining"
+  | "intent-routing"
   | "output-sufficiency"
   | "error-contract"
   | "secret-hygiene";

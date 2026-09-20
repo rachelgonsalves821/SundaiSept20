@@ -54,7 +54,7 @@ Three credentials/controls, three jobs:
 Other guarantees:
 
 - **No OAuth, no write capability anywhere.** There is no capability that permits a write, so none can be enabled by configuration.
-- **Read-only.** The four tools (`get_current_user`, `list_courses`, `list_assignments`, `health_check`) only perform GETs against Canvas.
+- **Read-only.** Four tools (`get_current_user`, `list_courses`, `list_assignments`, `health_check`) only perform GETs against Canvas. Two more (`list_intents`, `resolve_intent`) contact Canvas not at all.
 - **Capability checks happen before Canvas is called.** A blocked capability returns `PERMISSION_DENIED` without any outbound request.
 - **Auth failures are uniform.** Missing header, malformed header, and wrong token all return the identical `UNAUTHORIZED` / `"Unauthorized"` response. Token comparison is constant-time over SHA-256 digests, so neither a mismatch position nor the token length is observable.
 - **Secrets never appear in error messages.** Every client-visible error carries a stable `code` and a `message` that contains no tokens, headers, or raw Canvas response bodies. Unknown internal failures surface as a bare `INTERNAL_ERROR`.
@@ -73,6 +73,48 @@ Other guarantees:
 | `INTERNAL_ERROR` | Anything else. Details stay server-side. | `terminal` |
 
 The third column is the *disposition*: whether an agent receiving that code should stop, retry the identical call with backoff, or retry only with different arguments. It is enforced, not advisory — `evals/contract.ts` holds the same table and the evals assert tool results against it, so a code that changes category fails the build even when its string is unchanged.
+
+## Agent intents
+
+Tools describe *operations*. Intents describe *goals*. An agent holding only a tool list has to infer that "what's on the biology quiz?" means two chained reads, and that "submit my essay" is impossible here — and inferring the second wrongly is the expensive failure, because it ends with the agent reporting that it submitted coursework it never touched.
+
+Two tools close that gap, neither of which contacts Canvas:
+
+- `list_intents` — the whole catalogue with example phrasings and a per-intent status.
+- `resolve_intent` — rules on one intent: a plan, a capability gap, or a refusal.
+
+Classification stays in the model. The registry publishes examples, the model matches a request against them, and `resolve_intent` rules on the match; no NLP runs server-side, so the decision is deterministic and testable.
+
+Every intent resolves to one of three statuses, and the distinction between the last two is the point:
+
+| Status | Meaning | Agent should |
+|---|---|---|
+| `ready` | Servable, and every required capability is enabled. | Execute the returned `plan`. |
+| `blocked_by_capability` | Servable by design, but this deployment has not enabled a required capability. | Stop, and tell the user an operator can change `CANVAS_CAPABILITIES`. |
+| `unsupported` | No configuration of this connector will ever serve it. | Stop for good. Offer `alternatives`. |
+
+`unsupported` is returned even when every capability is enabled, because it is a property of the connector rather than of the deployment — the read-only guarantee means no write intent can be unlocked by configuration. Those resolutions deliberately carry no `plan` or `requires`, so there is nothing for an agent to attempt anyway.
+
+This is what separates taking a quiz from preparing for one:
+
+```jsonc
+// resolve_intent { "intent": "take_quiz" }
+{ "status": "unsupported", "reason": "read_only_connector",
+  "guidance": "This connector is read-only and cannot submit quiz responses...",
+  "alternatives": ["prepare_for_assessment"] }
+
+// resolve_intent { "intent": "prepare_for_assessment" }
+{ "status": "ready", "requires": ["read_courses", "read_assignments"], "missing": [],
+  "plan": [ { "tool": "list_courses", "why": "..." },
+            { "tool": "list_assignments", "why": "...",
+              "arguments_from": "course_id from the chosen entry in list_courses output" } ] }
+```
+
+Reading what an assessment covers is servable; producing the graded work is not. The refusal still routes the user somewhere useful rather than dead-ending.
+
+Resolving an intent costs no Canvas request, so an agent learns about a capability gap from the registry instead of by burning a call that returns `PERMISSION_DENIED`. `resolve_intent` does reveal which capabilities this deployment enabled, but an authenticated agent already learns that from the first denied call, so it is not a new disclosure. An unknown intent returns `INVALID_INPUT` naming the valid ids — `fix_arguments`, per the disposition table above.
+
+Intents live in `src/intents.ts`. Adding one means adding a registry entry; `test/intents.test.ts` enforces that every plan step names a tool the server actually registers and that every suggested alternative is itself servable.
 
 ## Testing
 
@@ -113,6 +155,7 @@ Scenarios are scored in five categories:
 | Category | Question |
 |---|---|
 | `chaining` | Can a multi-step task be completed using only what earlier tools returned? |
+| `intent-routing` | Does an intent resolve to a plan that works, a named capability gap, or a refusal that holds? |
 | `output-sufficiency` | Is a single tool result enough to answer the request, with provenance? |
 | `capability-enforcement` | Do denials arrive before Canvas is read, mid-chain included? |
 | `error-contract` | Does each failure carry the code *and disposition* an agent needs? |

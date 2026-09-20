@@ -163,7 +163,14 @@ describe("MCP server: responses are secret-safe", () => {
       const text = JSON.stringify(tools);
       expect(text).not.toContain(CANVAS_TOKEN);
       expect(text).not.toContain(CONNECTOR_TOKEN);
-      expect(tools.map((t) => t.name).sort()).toEqual(["get_current_user", "health_check", "list_assignments", "list_courses"]);
+      expect(tools.map((t) => t.name).sort()).toEqual([
+        "get_current_user",
+        "health_check",
+        "list_assignments",
+        "list_courses",
+        "list_intents",
+        "resolve_intent",
+      ]);
     } finally {
       await session.close();
     }
