@@ -5,6 +5,27 @@ import { CanvasApiError, CanvasClient } from "../src/canvas-client.js";
 const fixture = <T>(name: string): T => JSON.parse(readFileSync(new URL(`../fixtures/${name}`, import.meta.url), "utf8")) as T;
 
 describe("CanvasClient", () => {
+  it.each([
+    ["empty base URL", { baseUrl: "", apiToken: "secret" }],
+    ["invalid base URL", { baseUrl: "not a URL", apiToken: "secret" }],
+    ["empty API token", { baseUrl: "https://canvas.test", apiToken: "   " }],
+    ["zero timeout", { baseUrl: "https://canvas.test", apiToken: "secret", timeoutMs: 0 }],
+    ["negative timeout", { baseUrl: "https://canvas.test", apiToken: "secret", timeoutMs: -1 }],
+    ["NaN timeout", { baseUrl: "https://canvas.test", apiToken: "secret", timeoutMs: Number.NaN }],
+    ["infinite timeout", { baseUrl: "https://canvas.test", apiToken: "secret", timeoutMs: Number.POSITIVE_INFINITY }],
+  ])("rejects invalid configuration: %s", (_label, config) => {
+    expect(() => new CanvasClient(config)).toThrow(TypeError);
+  });
+
+  it.each([Number.NaN, 0, -1, 1.5])("rejects invalid course IDs: %s", async (courseId) => {
+    const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret" });
+
+    await expect(client.listAssignments(courseId)).rejects.toMatchObject({
+      code: "INVALID_INPUT",
+      message: "courseId must be a positive integer",
+    });
+  });
+
   it("follows Canvas pagination links", async () => {
     const fetchImpl = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify(fixture("canvas-courses-page-1.json")), { status: 200, headers: { link: '<https://canvas.test/api/v1/courses?page=2>; rel="next"' } }))
@@ -35,6 +56,45 @@ describe("CanvasClient", () => {
       { id: 2, name: "B" },
     ]);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("parses commas in URLs and multiple link relations", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify(fixture("canvas-courses-page-1.json")), {
+        status: 200,
+        headers: { link: '<https://canvas.test/api/v1/courses?page=2&sort=a,b>; rel="prev next", <https://canvas.test/api/v1/courses?page=9>; rel=last' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(fixture("canvas-courses-page-2.json")), { status: 200 }));
+    const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", fetchImpl });
+
+    await expect(client.listCourses()).resolves.toHaveLength(2);
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe("https://canvas.test/api/v1/courses?page=2&sort=a,b");
+  });
+
+  it("retries 429 responses using Retry-After and then succeeds", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "rate limited" }), { status: 429, headers: { "retry-after": "0" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(fixture("canvas-courses-page-1.json")), { status: 200 }));
+    const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", fetchImpl });
+
+    await expect(client.listCourses()).resolves.toHaveLength(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops after the configured maximum page count", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(fixture("canvas-courses-page-1.json")), {
+        status: 200,
+        headers: { link: '<https://canvas.test/api/v1/courses?page=2>; rel="next"' },
+      }),
+    );
+    const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", maxPages: 1, fetchImpl });
+
+    await expect(client.listCourses()).rejects.toMatchObject({
+      code: "CANVAS_API_ERROR",
+      message: "Canvas API pagination page limit exceeded",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("loads and validates the Canvas user fixture", async () => {
