@@ -22,8 +22,11 @@ export function createHttpServer(config: ConnectorConfig): Server {
         return;
       }
 
-      if (request.method !== "POST") {
-        response.setHeader("Allow", "POST");
+      // Streamable HTTP supports POST for JSON-RPC messages, GET for the
+      // server-to-client SSE stream, and DELETE for session termination.
+      // Authentication is required for all MCP methods.
+      if (!["POST", "GET", "DELETE"].includes(request.method ?? "")) {
+        response.setHeader("Allow", "GET, POST, DELETE");
         writeJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED", message: "Method not allowed" } });
         return;
       }
@@ -37,7 +40,7 @@ export function createHttpServer(config: ConnectorConfig): Server {
         return;
       }
 
-      const body = await readJsonBody(request);
+      const body = request.method === "POST" ? await readJsonBody(request) : undefined;
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       const server = createMcpServer({
         canvasBaseUrl: config.canvasBaseUrl,

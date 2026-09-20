@@ -70,10 +70,19 @@ describe("Streamable HTTP transport", () => {
     expect(body).toContain('"canvas-mcp-connector"');
   });
 
+  it("supports Streamable HTTP GET negotiation", async () => {
+    const baseUrl = await startTestServer();
+    const response = await fetch(`${baseUrl}/mcp`, {
+      headers: { Authorization: "Bearer connector-test-token" },
+    });
+    expect(response.status).toBe(406);
+    expect(await response.json()).toMatchObject({ error: { code: -32000 } });
+  });
+
   it("rejects unsupported MCP HTTP methods", async () => {
     const baseUrl = await startTestServer();
-    const response = await fetch(`${baseUrl}/mcp`, { method: "GET" });
+    const response = await fetch(`${baseUrl}/mcp`, { method: "PUT" });
     expect(response.status).toBe(405);
-    expect(response.headers.get("allow")).toBe("POST");
+    expect(response.headers.get("allow")).toBe("GET, POST, DELETE");
   });
 });
