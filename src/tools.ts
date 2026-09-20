@@ -24,9 +24,13 @@ export async function listCourses(deps: ToolDependencies) {
 }
 
 export async function listAssignments(input: unknown, deps: ToolDependencies) {
-  deps.policy.assertAllowed("read_assignments");
   const parsed = listAssignmentsInput.safeParse(input);
   if (!parsed.success) throw new InvalidInputError("course_id must be a positive integer");
+
+  // Reject malformed requests before checking policy or calling Canvas. This keeps
+  // validation deterministic and guarantees an invalid request never reaches the
+  // data plane.
+  deps.policy.assertAllowed("read_assignments");
   const { course_id: courseId } = parsed.data;
   const assignments = await deps.client.listAssignments(courseId);
   return { assignments: assignments.map((assignment) => normalizeAssignment(assignment, deps.canvasBaseUrl)), count: assignments.length };
