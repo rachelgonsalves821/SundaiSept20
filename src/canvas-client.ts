@@ -19,7 +19,7 @@ export class CanvasApiError extends ConnectorError {
     message: string,
     public readonly status: number,
     public readonly url: string,
-    code: "CANVAS_API_ERROR" | "CANVAS_TIMEOUT" = "CANVAS_API_ERROR",
+    code: "CANVAS_API_ERROR" | "CANVAS_TIMEOUT" | "RATE_LIMITED" = "CANVAS_API_ERROR",
   ) {
     super(code, message);
     this.name = "CanvasApiError";
@@ -156,7 +156,8 @@ export class CanvasClient implements CanvasGateway {
           }
         }
         if (!response.ok) {
-          throw new CanvasApiError(`Canvas API request failed with status ${response.status}`, response.status, url);
+          const code = response.status === 429 ? "RATE_LIMITED" : "CANVAS_API_ERROR";
+          throw new CanvasApiError(`Canvas API request failed with status ${response.status}`, response.status, url, code);
         }
         return response;
       } catch (error) {

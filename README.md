@@ -29,6 +29,22 @@ Accept: application/json, text/event-stream
 
 Missing or invalid connector tokens return `401 Unauthorized`. The current HTTP transport is intentionally stateless, so MCP clients should send each request without relying on a persistent MCP session. Start it locally with `npm run dev:http` or in production with `npm run start:http`.
 
+## Docker and CI
+
+Build and run the hosted server with:
+
+```bash
+docker build -t canvas-mcp-connector .
+docker run --rm -p 3000:3000 \
+  -e CANVAS_BASE_URL=https://canvas.example.edu \
+  -e CANVAS_API_TOKEN=replace-me \
+  -e CONNECTOR_AUTH_TOKEN=replace-me \
+  -e CANVAS_CAPABILITIES=read_profile,read_courses,read_assignments \
+  canvas-mcp-connector
+```
+
+The image runs as a non-root user and starts the authenticated HTTP transport. CI runs `npm ci`, typechecking, tests, and the production build for pushes and pull requests targeting `main`.
+
 ## Configuration
 
 | Variable | Required | Meaning |
