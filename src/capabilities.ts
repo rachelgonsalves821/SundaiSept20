@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConnectorError } from "./errors.js";
 
 export const CAPABILITIES = Object.freeze([
   "read_profile",
@@ -9,9 +10,9 @@ export const CAPABILITIES = Object.freeze([
 export type Capability = (typeof CAPABILITIES)[number];
 export const Capability = z.enum([...CAPABILITIES] as [Capability, ...Capability[]]);
 
-export class PermissionDeniedError extends Error {
+export class PermissionDeniedError extends ConnectorError {
   constructor(public readonly capability: Capability) {
-    super(`Permission denied: capability '${capability}' is not enabled`);
+    super("PERMISSION_DENIED", `Permission denied: capability '${capability}' is not enabled`);
     this.name = "PermissionDeniedError";
   }
 }

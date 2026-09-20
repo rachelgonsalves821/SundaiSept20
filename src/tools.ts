@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CanvasGateway } from "./canvas-types.js";
 import { CapabilityPolicy } from "./capabilities.js";
+import { InvalidInputError } from "./errors.js";
 import { normalizeAssignment, normalizeCourse, normalizeUser } from "./normalizers.js";
 
 export const listAssignmentsInput = z.object({ course_id: z.coerce.number().int().positive() });
@@ -24,7 +25,9 @@ export async function listCourses(deps: ToolDependencies) {
 
 export async function listAssignments(input: unknown, deps: ToolDependencies) {
   deps.policy.assertAllowed("read_assignments");
-  const { course_id: courseId } = listAssignmentsInput.parse(input);
+  const parsed = listAssignmentsInput.safeParse(input);
+  if (!parsed.success) throw new InvalidInputError("course_id must be a positive integer");
+  const { course_id: courseId } = parsed.data;
   const assignments = await deps.client.listAssignments(courseId);
   return { assignments: assignments.map((assignment) => normalizeAssignment(assignment, deps.canvasBaseUrl)), count: assignments.length };
 }

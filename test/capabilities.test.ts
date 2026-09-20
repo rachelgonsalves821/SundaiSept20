@@ -17,5 +17,10 @@ describe("capability policy", () => {
   it("blocks capabilities that are not configured", () => {
     const policy = new CapabilityPolicy("read_courses");
     expect(() => policy.assertAllowed("read_assignments")).toThrow(PermissionDeniedError);
+    try {
+      policy.assertAllowed("read_assignments");
+    } catch (error) {
+      expect(error).toMatchObject({ code: "PERMISSION_DENIED" });
+    }
   });
 });

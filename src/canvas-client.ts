@@ -1,4 +1,5 @@
 import type { CanvasAssignment, CanvasCourse, CanvasGateway, CanvasUser } from "./canvas-types.js";
+import { ConnectorError } from "./errors.js";
 
 export type { CanvasGateway } from "./canvas-types.js";
 
@@ -9,13 +10,13 @@ export interface CanvasClientConfig {
   fetchImpl?: typeof fetch;
 }
 
-export class CanvasApiError extends Error {
+export class CanvasApiError extends ConnectorError {
   constructor(
     message: string,
     public readonly status: number,
     public readonly url: string,
   ) {
-    super(message);
+    super(status === 408 ? "CANVAS_TIMEOUT" : "CANVAS_API_ERROR", message);
     this.name = "CanvasApiError";
   }
 }
