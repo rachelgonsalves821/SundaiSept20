@@ -27,3 +27,13 @@ export interface CanvasAssignment {
   html_url?: string;
   submission_types?: string[];
 }
+
+/**
+ * Transport-independent Canvas data access contract used by MCP tools.
+ * Implementations may call the Canvas REST API, fixtures, or a test double.
+ */
+export interface CanvasGateway {
+  getCurrentUser(): Promise<CanvasUser>;
+  listCourses(): Promise<CanvasCourse[]>;
+  listAssignments(courseId: number): Promise<CanvasAssignment[]>;
+}

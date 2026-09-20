@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { CanvasClient } from "./canvas-client.js";
+import type { CanvasGateway } from "./canvas-types.js";
 import { CapabilityPolicy } from "./capabilities.js";
 import { normalizeAssignment, normalizeCourse, normalizeUser } from "./normalizers.js";
 
 export const listAssignmentsInput = z.object({ course_id: z.coerce.number().int().positive() });
 
 export interface ToolDependencies {
-  client: CanvasClient;
+  client: CanvasGateway;
   policy: CapabilityPolicy;
   canvasBaseUrl: string;
 }

@@ -1,4 +1,6 @@
-import type { CanvasAssignment, CanvasCourse, CanvasUser } from "./canvas-types.js";
+import type { CanvasAssignment, CanvasCourse, CanvasGateway, CanvasUser } from "./canvas-types.js";
+
+export type { CanvasGateway } from "./canvas-types.js";
 
 export interface CanvasClientConfig {
   baseUrl: string;
@@ -18,7 +20,7 @@ export class CanvasApiError extends Error {
   }
 }
 
-export class CanvasClient {
+export class CanvasClient implements CanvasGateway {
   private readonly baseUrl: string;
   private readonly apiToken: string;
   private readonly timeoutMs: number;
