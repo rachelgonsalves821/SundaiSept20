@@ -62,15 +62,17 @@ Other guarantees:
 
 ### Error codes
 
-| Code | When |
-|---|---|
-| `PERMISSION_DENIED` | The capability behind the tool is not in `CANVAS_CAPABILITIES`. |
-| `INVALID_INPUT` | Tool arguments failed validation. |
-| `UNAUTHORIZED` | Inbound bearer token missing, malformed, or wrong. Always the bare message `Unauthorized`. |
-| `CANVAS_API_ERROR` | Canvas returned a non-success status other than the ones below. |
-| `CANVAS_TIMEOUT` | Canvas did not respond in time (or returned 408/504). |
-| `RATE_LIMITED` | Canvas returned 429. Transient; retry with backoff. |
-| `INTERNAL_ERROR` | Anything else. Details stay server-side. |
+| Code | When | A calling agent should |
+|---|---|---|
+| `PERMISSION_DENIED` | The capability behind the tool is not in `CANVAS_CAPABILITIES`. | `terminal` |
+| `INVALID_INPUT` | Tool arguments failed validation. | `fix_arguments` |
+| `UNAUTHORIZED` | Inbound bearer token missing, malformed, or wrong. Always the bare message `Unauthorized`. | `terminal` |
+| `CANVAS_API_ERROR` | Canvas returned a non-success status other than the ones below. | `terminal` |
+| `CANVAS_TIMEOUT` | Canvas did not respond in time (or returned 408/504). | `retry` |
+| `RATE_LIMITED` | Canvas returned 429. Transient; retry with backoff. | `retry` |
+| `INTERNAL_ERROR` | Anything else. Details stay server-side. | `terminal` |
+
+The third column is the *disposition*: whether an agent receiving that code should stop, retry the identical call with backoff, or retry only with different arguments. It is enforced, not advisory — `evals/contract.ts` holds the same table and the evals assert tool results against it, so a code that changes category fails the build even when its string is unchanged.
 
 ## Testing
 
@@ -84,6 +86,43 @@ const fixture = <T>(name: string): T =>
 ```
 
 Fixtures contain no real identifiers — hosts use `.invalid`, and IDs are synthetic.
+
+## Evals
+
+The tests above ask whether each unit behaves correctly. The evals in `evals/` ask a different question: given only these tools and only what they return, could an agent actually finish the task?
+
+```bash
+npm run eval
+```
+
+They are deterministic — no model, no network, no Canvas token — so `npm test` runs them too and they gate CI like any other test. `npm run eval` additionally prints a scored report; pass a scenario id or category to filter, or `--json` for a machine-readable artifact.
+
+A scenario in `evals/scenarios.ts` names a real user request, the tool sequence meant to satisfy it, and the capabilities in force. The part that carries the weight is that each step derives its arguments from the previous step's output:
+
+```ts
+{
+  tool: "list_assignments",
+  argsFrom: ({ last }) => ({ course_id: courseIdMatching(last, /biology/i) }),
+}
+```
+
+That resolver stands in for the model's job. It throws when the data it needs is absent, so "an agent could not have known which `course_id` to pass" is recorded as a failure rather than hard-coded around. Renaming the `courses` key in a tool result turns up here as a broken chain, not just a changed assertion.
+
+Scenarios are scored in five categories:
+
+| Category | Question |
+|---|---|
+| `chaining` | Can a multi-step task be completed using only what earlier tools returned? |
+| `output-sufficiency` | Is a single tool result enough to answer the request, with provenance? |
+| `capability-enforcement` | Do denials arrive before Canvas is read, mid-chain included? |
+| `error-contract` | Does each failure carry the code *and disposition* an agent needs? |
+| `secret-hygiene` | Does any credential reach the agent, on success or on failure? |
+
+Every scenario also gets the secret scan and, where declared, an assertion on which Canvas reads actually happened (`expectGatewayCalls: []` asserts none did).
+
+`evals/fixture-gateway.ts` is a `CanvasGateway` backed by the same `fixtures/` payloads. It records every Canvas read and can inject timeout, rate-limit, and API-error faults. Its errors are built as `CanvasApiError` with the codes and messages `CanvasClient` itself produces — keep them in sync with `request()` in `src/canvas-client.ts` if that changes. Status-to-code mapping itself is covered by `test/canvas-client.test.ts`; the evals sit above it and check what reaches the agent.
+
+This is Tier 1. A Tier 2 model-in-the-loop run would reuse the same scenarios — each carries a `prompt` field for exactly that — but score tool *choice* against the prompt rather than executing a declared sequence. That needs an API key and is nondeterministic, so it is not part of this suite.
 
 ## Docker
 
@@ -113,6 +152,6 @@ Note that `tsconfig.json` sets `rootDir: "."`, so compiled output lands in `dist
 
 `.github/workflows/ci.yml` runs on pushes to `main`, on pull requests, and on manual dispatch. Three jobs:
 
-- **verify** — `npm ci`, `typecheck`, `test`, `build` across Node 20 and 22 (the `engines` floor and current LTS), then asserts both build entrypoints exist and match the start scripts.
+- **verify** — `npm ci`, `typecheck`, `test`, `build` across Node 20 and 22 (the `engines` floor and current LTS), then asserts both build entrypoints exist and match the start scripts. `npm test` covers the evals, so they gate CI without a separate job.
 - **no committed credentials** — fails if a `.env` file is ever tracked, or if `.env.example` picks up something that looks like a real token rather than a `replace-with-` placeholder.
 - **docker build** — builds the image and smoke-tests both transports. For HTTP: `GET /health` returns ok, `POST /mcp` without a token returns 401, and `POST /mcp` with the connector token completes an MCP `initialize`. For stdio: a real `initialize` / `tools/list` handshake over stdin. Neither needs a live Canvas instance.

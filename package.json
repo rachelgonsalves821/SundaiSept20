@@ -11,6 +11,7 @@
     "dev": "tsx src/index.ts",
     "dev:http": "tsx src/http-index.ts",
     "test": "vitest run",
+    "eval": "tsx evals/run.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
