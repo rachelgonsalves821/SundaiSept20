@@ -24,7 +24,7 @@ export class PermissionDeniedError extends ConnectorError {
 /**
  * Allow-list of capabilities this deployment is willing to serve.
  *
- * Unknown strings are dropped at construction and never granted, so
+ * Names are trimmed and lowercased. Unknown strings are dropped at construction and never granted, so
  * "read_courses,write_grades,admin" yields exactly ["read_courses"]. Dropped
  * names are reported on stderr (never stdout — that is the MCP stream).
  */
@@ -33,7 +33,7 @@ export class CapabilityPolicy {
 
   constructor(input: string | string[]) {
     const raw = typeof input === "string" ? input.split(",") : input;
-    const names = raw.map((value) => value.trim()).filter(Boolean);
+    const names = raw.map((value) => value.trim().toLowerCase()).filter(Boolean);
 
     const known = new Set<Capability>();
     const unknown: string[] = [];

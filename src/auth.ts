@@ -11,10 +11,12 @@ import { UnauthorizedError } from "./errors.js";
  * so a caller cannot tell a missing header from a malformed one from a wrong
  * token. Nothing about the presented or expected token is ever included.
  */
-export function assertConnectorToken(
-  header: string | undefined,
-  config: { expectedToken: string },
-): void {
+export interface AuthConfig {
+  /** The CONNECTOR_AUTH_TOKEN agents must present. Never the Canvas token. */
+  expectedToken: string;
+}
+
+export function assertConnectorToken(header: string | undefined, config: AuthConfig): void {
   const presented = extractBearerToken(header);
   if (presented === undefined) throw new UnauthorizedError();
   if (!config.expectedToken) throw new UnauthorizedError();
