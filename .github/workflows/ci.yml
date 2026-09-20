@@ -88,8 +88,12 @@ jobs:
           push: false
           load: true
           tags: canvas-mcp-connector:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # No registry cache: type=gha needs the Actions cache scope, which
+          # the workflow's `permissions: contents: read` does not grant, and
+          # the export fails with "error writing layer blob: not_found".
+          # The image builds in well under a minute, so the cache is not
+          # worth widening permissions for.
+          provenance: false
 
       # The default CMD is the HTTP transport. /health is public, so it proves
       # the image boots without any Canvas credentials being valid.
