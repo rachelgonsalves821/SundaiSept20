@@ -1,13 +1,19 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { CanvasApiError, CanvasClient } from "../src/canvas-client.js";
+
+const fixture = <T>(name: string): T => JSON.parse(readFileSync(new URL(`../fixtures/${name}`, import.meta.url), "utf8")) as T;
 
 describe("CanvasClient", () => {
   it("follows Canvas pagination links", async () => {
     const fetchImpl = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 1, name: "A" }]), { status: 200, headers: { link: '<https://canvas.test/api/v1/courses?page=2>; rel="next"' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 2, name: "B" }]), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify(fixture("canvas-courses-page-1.json")), { status: 200, headers: { link: '<https://canvas.test/api/v1/courses?page=2>; rel="next"' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(fixture("canvas-courses-page-2.json")), { status: 200 }));
     const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", fetchImpl });
-    await expect(client.listCourses()).resolves.toHaveLength(2);
+    await expect(client.listCourses()).resolves.toMatchObject([
+      { id: 2001, name: "Introduction to Biology" },
+      { id: 2002, name: "Foundations of Computer Science" },
+    ]);
     expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
       "https://canvas.test/api/v1/courses?per_page=100",
       "https://canvas.test/api/v1/courses?page=2",
@@ -29,6 +35,42 @@ describe("CanvasClient", () => {
       { id: 2, name: "B" },
     ]);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads and validates the Canvas user fixture", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(fixture("canvas-user.json")), { status: 200 }),
+    );
+    const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", fetchImpl });
+
+    await expect(client.getCurrentUser()).resolves.toMatchObject({ id: 1001, name: "Example Canvas User" });
+  });
+
+  it("loads and validates the Canvas assignments fixture", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(fixture("canvas-assignments.json")), { status: 200 }),
+    );
+    const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", fetchImpl });
+
+    await expect(client.listAssignments(2001)).resolves.toMatchObject([
+      { id: 3001, course_id: 2001, name: "Week 1 Reflection" },
+    ]);
+  });
+
+  it("rejects pagination links outside the configured Canvas origin", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(fixture("canvas-courses-page-1.json")), {
+        status: 200,
+        headers: { link: '<https://attacker.example.invalid/courses?page=2>; rel="next"' },
+      }),
+    );
+    const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", fetchImpl });
+
+    await expect(client.listCourses()).rejects.toMatchObject({
+      code: "CANVAS_API_ERROR",
+      message: "Canvas pagination URL is outside the configured Canvas origin",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("returns an empty result for an empty Canvas page", async () => {

@@ -9,6 +9,15 @@ export interface CanvasUser {
   avatar_url?: string;
 }
 
+export const CanvasUserSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  short_name: z.string().optional(),
+  email: z.string().optional(),
+  login_id: z.string().optional(),
+  avatar_url: z.string().url().optional(),
+});
+
 export interface CanvasCourse {
   id: number;
   name: string;
@@ -39,6 +48,17 @@ export interface CanvasAssignment {
   html_url?: string;
   submission_types?: string[];
 }
+
+export const CanvasAssignmentSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  due_at: z.string().nullable().optional(),
+  points_possible: z.number().nullable().optional(),
+  course_id: z.number().optional(),
+  html_url: z.string().url().optional(),
+  submission_types: z.array(z.string()).optional(),
+});
 
 /**
  * Transport-independent Canvas data access contract used by MCP tools.
