@@ -15,8 +15,9 @@ export class CanvasApiError extends ConnectorError {
     message: string,
     public readonly status: number,
     public readonly url: string,
+    code: "CANVAS_API_ERROR" | "CANVAS_TIMEOUT" = "CANVAS_API_ERROR",
   ) {
-    super(status === 408 ? "CANVAS_TIMEOUT" : "CANVAS_API_ERROR", message);
+    super(code, message);
     this.name = "CanvasApiError";
   }
 }
@@ -48,7 +49,7 @@ export class CanvasClient implements CanvasGateway {
 
   private async get<T>(path: string): Promise<T> {
     const response = await this.request(path);
-    return (await response.json()) as T;
+    return this.parseJson<T>(response);
   }
 
   private async getPaginated<T>(path: string): Promise<T[]> {
@@ -57,8 +58,11 @@ export class CanvasClient implements CanvasGateway {
 
     while (nextUrl) {
       const response = await this.request(nextUrl);
-      const page = (await response.json()) as T[];
-      if (Array.isArray(page)) results.push(...page);
+      const page = await this.parseJson<unknown>(response);
+      if (!Array.isArray(page)) {
+        throw new CanvasApiError("Canvas API returned an invalid list response", 502, nextUrl);
+      }
+      results.push(...page as T[]);
       nextUrl = this.parseNextLink(response.headers.get("link"));
     }
     return results;
@@ -83,12 +87,20 @@ export class CanvasClient implements CanvasGateway {
       return response;
     } catch (error) {
       if (error instanceof CanvasApiError) throw error;
-      if (error instanceof DOMException && error.name === "AbortError") {
-        throw new CanvasApiError("Canvas API request timed out", 408, url);
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new CanvasApiError("Canvas API request timed out", 408, url, "CANVAS_TIMEOUT");
       }
       throw new CanvasApiError("Canvas API request failed", 502, url);
     } finally {
       clearTimeout(timeout);
+    }
+  }
+
+  private async parseJson<T>(response: Response): Promise<T> {
+    try {
+      return (await response.json()) as T;
+    } catch {
+      throw new CanvasApiError("Canvas API returned malformed JSON", 502, response.url || this.baseUrl);
     }
   }
 
