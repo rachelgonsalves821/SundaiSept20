@@ -93,8 +93,8 @@ describe("unknown capabilities", () => {
     expect(() => policy.assertAllowed("write_grades" as Capability)).toThrow(PermissionDeniedError);
   });
 
-  it("is case-sensitive: READ_COURSES is not read_courses", () => {
-    expect(new CapabilityPolicy("READ_COURSES").list()).toEqual([]);
+  it("lowercases names: READ_COURSES is read_courses", () => {
+    expect(new CapabilityPolicy("READ_COURSES, Read_Profile").list()).toEqual(["read_profile", "read_courses"]);
   });
 
   it("reports dropped names on stderr and never on stdout", () => {
