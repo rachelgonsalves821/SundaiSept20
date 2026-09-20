@@ -8,8 +8,26 @@ Reusable TypeScript MCP server for authorized, capability-scoped access to Canva
 2. Run `npm install`.
 3. Run `npm run typecheck` and `npm test`.
 4. Run `npm run dev` for the stdio server.
+5. Run `npm run dev:http` for the authenticated Streamable HTTP server.
 
 The initial read-only capabilities are `read_profile`, `read_courses`, and `read_assignments`. Capabilities not listed in `CANVAS_CAPABILITIES` return permission errors. Credentials are never included in tool output or logs.
+
+## HTTP transport
+
+The hosted transport exposes:
+
+- `GET /health` — public liveness check; returns no credentials.
+- `POST /mcp` — stateless MCP Streamable HTTP endpoint.
+
+Every `/mcp` request must include:
+
+```http
+Authorization: Bearer <CONNECTOR_AUTH_TOKEN>
+Content-Type: application/json
+Accept: application/json, text/event-stream
+```
+
+Missing or invalid connector tokens return `401 Unauthorized`. The current HTTP transport is intentionally stateless, so MCP clients should send each request without relying on a persistent MCP session. Start it locally with `npm run dev:http` or in production with `npm run start:http`.
 
 ## Configuration
 
@@ -69,24 +87,32 @@ Fixtures contain no real identifiers — hosts use `.invalid`, and IDs are synth
 
 ## Docker
 
-The server speaks MCP over **stdio**, so the container has no listening port and nothing to `EXPOSE`. An MCP client drives it by attaching to stdin/stdout, which means `-i` is required:
+One image serves both transports. Build it with:
 
 ```bash
 docker build -t canvas-mcp-connector .
 ```
 
+The default command is the authenticated HTTP transport:
+
 ```bash
-docker run -i --rm --env-file .env canvas-mcp-connector
+docker run --rm -p 3000:3000 --env-file .env canvas-mcp-connector
+```
+
+The same image runs the stdio transport when given an explicit command. An MCP client drives it over stdin/stdout, so `-i` is required:
+
+```bash
+docker run -i --rm --env-file .env canvas-mcp-connector node dist/src/index.js
 ```
 
 The image is a two-stage build: stage one installs all dependencies and compiles, stage two installs production dependencies only and copies in `dist/src`. Tests are not copied into the image, and it runs as the unprivileged `node` user. Credentials are passed at runtime and never baked into a layer.
 
-Note that `tsconfig.json` sets `rootDir: "."`, so compiled output lands in `dist/src/index.js` — which is what both `npm start` and the image `CMD` point at.
+Note that `tsconfig.json` sets `rootDir: "."`, so compiled output lands in `dist/src/`, not `dist/`. The `start` / `start:http` scripts and the image `CMD` all reflect that, and the build fails if either entrypoint goes missing.
 
 ## CI
 
 `.github/workflows/ci.yml` runs on pushes to `main`, on pull requests, and on manual dispatch. Three jobs:
 
-- **verify** — `npm ci`, `typecheck`, `test`, `build` across Node 20 and 22 (the `engines` floor and current LTS), then asserts the build entrypoint matches the `start` script.
+- **verify** — `npm ci`, `typecheck`, `test`, `build` across Node 20 and 22 (the `engines` floor and current LTS), then asserts both build entrypoints exist and match the start scripts.
 - **no committed credentials** — fails if a `.env` file is ever tracked, or if `.env.example` picks up something that looks like a real token rather than a `replace-with-` placeholder.
-- **docker build** — builds the image, then smoke-tests it over stdio with a real MCP `initialize` / `tools/list` handshake. `health_check` is the only tool needing no Canvas credentials, so this proves the image boots and speaks MCP without a live Canvas instance.
+- **docker build** — builds the image and smoke-tests both transports. For HTTP: `GET /health` returns ok, `POST /mcp` without a token returns 401, and `POST /mcp` with the connector token completes an MCP `initialize`. For stdio: a real `initialize` / `tools/list` handshake over stdin. Neither needs a live Canvas instance.

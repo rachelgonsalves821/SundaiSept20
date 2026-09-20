@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -42,8 +43,13 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Verify build entrypoint matches the start script
-        run: test -f dist/src/index.js
+      # tsconfig.json sets rootDir "." so output lands in dist/src/, not dist/.
+      # These assertions fail loudly if a start script and the build layout
+      # ever disagree again.
+      - name: Verify build entrypoints match the start scripts
+        run: |
+          test -f dist/src/index.js
+          test -f dist/src/http-index.js
 
   secrets:
     name: no committed credentials
@@ -85,9 +91,47 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # health_check is the only tool that needs no Canvas credentials, so it
-      # proves the image boots and speaks MCP without a live Canvas instance.
-      - name: Smoke test the image over stdio
+      # The default CMD is the HTTP transport. /health is public, so it proves
+      # the image boots without any Canvas credentials being valid.
+      - name: Smoke test the HTTP transport
+        run: |
+          docker run -d --rm --name connector-ci -p 3000:3000 \
+            -e CANVAS_BASE_URL=https://canvas.example.invalid \
+            -e CANVAS_API_TOKEN=ci-placeholder-token \
+            -e CONNECTOR_AUTH_TOKEN=ci-connector-token \
+            -e CANVAS_CAPABILITIES=read_profile,read_courses,read_assignments \
+            canvas-mcp-connector:ci
+
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/health >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+
+          echo "--- GET /health ---"
+          curl -fsS http://localhost:3000/health | tee /dev/stderr | grep -q '"status":"ok"'
+
+          # /mcp must reject an unauthenticated request.
+          echo "--- POST /mcp without a token (expect 401) ---"
+          status=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:3000/mcp \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+          test "$status" = "401" || { echo "::error::expected 401, got $status"; exit 1; }
+
+          # ...and accept a request carrying the connector token.
+          echo "--- POST /mcp with a token (expect health_check listed) ---"
+          curl -fsS -X POST http://localhost:3000/mcp \
+            -H 'Authorization: Bearer ci-connector-token' \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            | tee /dev/stderr | grep -q 'canvas-mcp-connector'
+
+          docker rm -f connector-ci
+
+      # The same image still runs the stdio transport when given an explicit
+      # command, so both entrypoints stay covered.
+      - name: Smoke test the stdio transport
         run: |
           printf '%s\n' \
             '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
@@ -96,7 +140,9 @@ jobs:
           | timeout 60 docker run -i --rm \
               -e CANVAS_BASE_URL=https://canvas.example.invalid \
               -e CANVAS_API_TOKEN=ci-placeholder-token \
+              -e CONNECTOR_AUTH_TOKEN=ci-connector-token \
               -e CANVAS_CAPABILITIES=read_profile,read_courses,read_assignments \
               canvas-mcp-connector:ci \
+              node dist/src/index.js \
           | tee /dev/stderr \
           | grep -q '"name":"health_check"'

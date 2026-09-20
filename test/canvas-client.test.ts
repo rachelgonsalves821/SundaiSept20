@@ -171,15 +171,22 @@ describe("CanvasClient", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
-  it.each([401, 403, 404, 429, 500, 502])("maps HTTP %s to CANVAS_API_ERROR without exposing the body", async (status) => {
+  it.each([
+    [401, "CANVAS_API_ERROR"],
+    [403, "CANVAS_API_ERROR"],
+    [404, "CANVAS_API_ERROR"],
+    [429, "RATE_LIMITED"],
+    [500, "CANVAS_API_ERROR"],
+    [502, "CANVAS_API_ERROR"],
+  ])("maps HTTP %s to a stable code without exposing the body", async (status, expectedCode) => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify({ token: "do-not-return" }), { status }),
     );
-    const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", fetchImpl });
+    const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", maxRateLimitRetries: 0, fetchImpl });
 
     const error = await client.listCourses().catch((value: unknown) => value);
     expect(error).toBeInstanceOf(CanvasApiError);
-    expect(error).toMatchObject({ code: "CANVAS_API_ERROR", status });
+    expect(error).toMatchObject({ code: expectedCode, status });
     expect((error as Error).message).not.toContain("do-not-return");
   });
 
