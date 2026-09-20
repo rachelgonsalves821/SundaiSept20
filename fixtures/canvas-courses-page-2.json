@@ -1,0 +1,11 @@
+[
+  {
+    "id": 2002,
+    "name": "Foundations of Computer Science",
+    "course_code": "CS-100",
+    "workflow_state": "available",
+    "start_at": "2026-09-01T00:00:00Z",
+    "end_at": "2026-12-15T23:59:59Z",
+    "html_url": "https://canvas.example.invalid/courses/2002"
+  }
+]

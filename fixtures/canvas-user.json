@@ -1,0 +1,8 @@
+{
+  "id": 1001,
+  "name": "Example Canvas User",
+  "short_name": "Example User",
+  "email": "example.user@example.invalid",
+  "login_id": "example-user",
+  "avatar_url": "https://canvas.example.invalid/images/users/1001/avatar"
+}

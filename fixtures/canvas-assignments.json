@@ -1,0 +1,12 @@
+[
+  {
+    "id": 3001,
+    "name": "Week 1 Reflection",
+    "description": "A sanitized assignment fixture for connector tests.",
+    "due_at": "2026-09-08T23:59:00Z",
+    "points_possible": 10,
+    "course_id": 2001,
+    "html_url": "https://canvas.example.invalid/courses/2001/assignments/3001",
+    "submission_types": ["online_text_entry"]
+  }
+]
