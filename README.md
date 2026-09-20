@@ -25,10 +25,17 @@ Startup validation failures are written to stderr and name the variable, never i
 
 ## Security model
 
-**Single-tenant. One deployment is one Canvas identity.** There is one `CANVAS_API_TOKEN` per deployment, so every agent that presents a valid `CONNECTOR_AUTH_TOKEN` acts as that same Canvas user and sees exactly what that user sees. The connector token authenticates *the agent to the connector*; it does not select or scope a Canvas identity. If you need different agents to see different Canvas data, run separate deployments with separate Canvas tokens. There is no OAuth, no per-user mapping, and no plan to add either in this version.
+**Single-tenant: one deployment serves one Canvas identity.** There is one `CANVAS_API_TOKEN` per deployment, so every agent that presents a valid `CONNECTOR_AUTH_TOKEN` acts as that same Canvas user and sees exactly what that user sees. The connector token authenticates *the agent to the connector*; it does not select or scope a Canvas identity. If you need different agents to see different Canvas data, run separate deployments with separate Canvas tokens. There is no OAuth, no per-user mapping, and no plan to add either in this version.
+
+Three credentials/controls, three jobs:
+
+- **Canvas token** (`CANVAS_API_TOKEN`) authenticates the connector to Canvas. It stays server-side and is never returned to an agent.
+- **Connector token** (`CONNECTOR_AUTH_TOKEN`) authenticates agents to the hosted connector. It is never sent to Canvas.
+- **Capabilities** (`CANVAS_CAPABILITIES`) decide which tools are usable at all.
 
 Other guarantees:
 
+- **No OAuth, no write capability anywhere.** There is no capability that permits a write, so none can be enabled by configuration.
 - **Read-only.** The four tools (`get_current_user`, `list_courses`, `list_assignments`, `health_check`) only perform GETs against Canvas.
 - **Capability checks happen before Canvas is called.** A blocked capability returns `PERMISSION_DENIED` without any outbound request.
 - **Auth failures are uniform.** Missing header, malformed header, and wrong token all return the identical `UNAUTHORIZED` / `"Unauthorized"` response. Token comparison is constant-time over SHA-256 digests, so neither a mismatch position nor the token length is observable.
