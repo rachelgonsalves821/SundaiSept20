@@ -55,8 +55,14 @@ export class CanvasClient implements CanvasGateway {
   private async getPaginated<T>(path: string): Promise<T[]> {
     const results: T[] = [];
     let nextUrl: string | undefined = this.toAbsoluteUrl(path);
+    const visitedUrls = new Set<string>();
 
     while (nextUrl) {
+      if (visitedUrls.has(nextUrl)) {
+        throw new CanvasApiError("Canvas API pagination loop detected", 502, nextUrl);
+      }
+      visitedUrls.add(nextUrl);
+
       const response = await this.request(nextUrl);
       const page = await this.parseJson<unknown>(response);
       if (!Array.isArray(page)) {
@@ -109,7 +115,7 @@ export class CanvasClient implements CanvasGateway {
   }
 
   private parseNextLink(header: string | null): string | undefined {
-    const next = header?.split(",").find((part) => part.includes('rel="next"'));
+    const next = header?.split(",").find((part) => /;\s*rel\s*=\s*"?next"?(?:[;\s]|$)/i.test(part));
     return next?.match(/<([^>]+)>/)?.[1];
   }
 }

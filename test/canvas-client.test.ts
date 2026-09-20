@@ -8,13 +8,53 @@ describe("CanvasClient", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 2, name: "B" }]), { status: 200 }));
     const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", fetchImpl });
     await expect(client.listCourses()).resolves.toHaveLength(2);
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      "https://canvas.test/api/v1/courses?per_page=100",
+      "https://canvas.test/api/v1/courses?page=2",
+    ]);
     expect(fetchImpl.mock.calls[0]?.[1]).toMatchObject({ headers: { Authorization: "Bearer secret" } });
+  });
+
+  it("follows only rel=next and preserves page ordering", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 1, name: "A" }]), {
+        status: 200,
+        headers: { link: '<https://canvas.test/api/v1/courses?page=0>; rel="prev", <https://canvas.test/api/v1/courses?page=2>; rel="next", <https://canvas.test/api/v1/courses?page=9>; rel="last"' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 2, name: "B" }]), { status: 200 }));
+    const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", fetchImpl });
+
+    await expect(client.listCourses()).resolves.toEqual([
+      { id: 1, name: "A" },
+      { id: 2, name: "B" },
+    ]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it("returns an empty result for an empty Canvas page", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response("[]", { status: 200 }));
     const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", fetchImpl });
     await expect(client.listCourses()).resolves.toEqual([]);
+  });
+
+  it("stops repeated next URLs instead of looping forever", async () => {
+    const repeatedUrl = "https://canvas.test/api/v1/courses?page=2";
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 1, name: "A" }]), {
+        status: 200,
+        headers: { link: `<${repeatedUrl}>; rel="next"` },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 2, name: "B" }]), {
+        status: 200,
+        headers: { link: `<${repeatedUrl}>; rel="next"` },
+      }));
+    const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", fetchImpl });
+
+    await expect(client.listCourses()).rejects.toMatchObject({
+      code: "CANVAS_API_ERROR",
+      message: "Canvas API pagination loop detected",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it.each([401, 403, 404, 429, 500, 502])("maps HTTP %s to CANVAS_API_ERROR without exposing the body", async (status) => {
