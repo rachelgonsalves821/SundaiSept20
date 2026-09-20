@@ -8,8 +8,26 @@ Reusable TypeScript MCP server for authorized, capability-scoped access to Canva
 2. Run `npm install`.
 3. Run `npm run typecheck` and `npm test`.
 4. Run `npm run dev` for the stdio server.
+5. Run `npm run dev:http` for the authenticated Streamable HTTP server.
 
 The initial read-only capabilities are `read_profile`, `read_courses`, and `read_assignments`. Capabilities not listed in `CANVAS_CAPABILITIES` return permission errors. Credentials are never included in tool output or logs.
+
+## HTTP transport
+
+The hosted transport exposes:
+
+- `GET /health` — public liveness check; returns no credentials.
+- `POST /mcp` — stateless MCP Streamable HTTP endpoint.
+
+Every `/mcp` request must include:
+
+```http
+Authorization: Bearer <CONNECTOR_AUTH_TOKEN>
+Content-Type: application/json
+Accept: application/json, text/event-stream
+```
+
+Missing or invalid connector tokens return `401 Unauthorized`. The current HTTP transport is intentionally stateless, so MCP clients should send each request without relying on a persistent MCP session. Start it locally with `npm run dev:http` or in production with `npm run start:http`.
 
 ## Configuration
 
