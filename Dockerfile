@@ -1,22 +1,48 @@
-FROM node:20-alpine AS build
+# syntax=docker/dockerfile:1
 
+# Canvas MCP connector.
+#
+# One image, two transports:
+#   HTTP  (default) — `docker run -p 3000:3000 ...`, serves /health and /mcp.
+#   stdio           — `docker run -i ... node dist/src/index.js`, driven by an
+#                     MCP client over stdin/stdout.
+#
+# tsconfig.json sets rootDir "." so tsc emits to dist/src/, not dist/. Every
+# entrypoint path below reflects that; the RUN check fails the build if it
+# ever stops being true.
+#
+# Credentials are supplied at runtime via environment variables and are never
+# baked into an image layer.
+
+ARG NODE_VERSION=22-alpine
+
+FROM node:${NODE_VERSION} AS build
 WORKDIR /app
-COPY package*.json ./
+
+# Install against the committed lockfile so the build is reproducible.
+COPY package.json package-lock.json ./
 RUN npm ci
-COPY . .
-RUN npm run build
-RUN npm prune --omit=dev
 
-FROM node:20-alpine
+# test/ is deliberately not copied: the image ships runtime code only, and an
+# include pattern that matches nothing is not a tsc error.
+COPY tsconfig.json ./
+COPY src/ ./src/
+RUN npm run build \
+ && test -f dist/src/index.js \
+ && test -f dist/src/http-index.js
 
-WORKDIR /app
+FROM node:${NODE_VERSION} AS runtime
 ENV NODE_ENV=production
 ENV PORT=3000
+WORKDIR /app
 
-COPY --from=build --chown=node:node /app/package*.json ./
-COPY --from=build --chown=node:node /app/node_modules ./node_modules
-COPY --from=build --chown=node:node /app/dist ./dist
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
+COPY --from=build --chown=node:node /app/dist/src ./dist/src
+
+# node:alpine ships an unprivileged `node` user (uid 1000).
 USER node
+
 EXPOSE 3000
-CMD ["node", "dist/http-index.js"]
+CMD ["node", "dist/src/http-index.js"]

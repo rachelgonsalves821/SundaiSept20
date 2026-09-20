@@ -6,8 +6,8 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
-    "start:http": "node dist/http-index.js",
+    "start": "node dist/src/index.js",
+    "start:http": "node dist/src/http-index.js",
     "dev": "tsx src/index.ts",
     "dev:http": "tsx src/http-index.ts",
     "test": "vitest run",

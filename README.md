@@ -29,22 +29,6 @@ Accept: application/json, text/event-stream
 
 Missing or invalid connector tokens return `401 Unauthorized`. The current HTTP transport is intentionally stateless, so MCP clients should send each request without relying on a persistent MCP session. Start it locally with `npm run dev:http` or in production with `npm run start:http`.
 
-## Docker and CI
-
-Build and run the hosted server with:
-
-```bash
-docker build -t canvas-mcp-connector .
-docker run --rm -p 3000:3000 \
-  -e CANVAS_BASE_URL=https://canvas.example.edu \
-  -e CANVAS_API_TOKEN=replace-me \
-  -e CONNECTOR_AUTH_TOKEN=replace-me \
-  -e CANVAS_CAPABILITIES=read_profile,read_courses,read_assignments \
-  canvas-mcp-connector
-```
-
-The image runs as a non-root user and starts the authenticated HTTP transport. CI runs `npm ci`, typechecking, tests, and the production build for pushes and pull requests targeting `main`.
-
 ## Configuration
 
 | Variable | Required | Meaning |
@@ -87,3 +71,48 @@ Other guarantees:
 | `CANVAS_TIMEOUT` | Canvas did not respond in time (or returned 408/504). |
 | `RATE_LIMITED` | Canvas returned 429. Transient; retry with backoff. |
 | `INTERNAL_ERROR` | Anything else. Details stay server-side. |
+
+## Testing
+
+`npm test` runs the vitest suite. Tests never reach the network: the Canvas client takes an injected `fetchImpl`, and tool-level tests inject a `CanvasGateway` double instead of a real client.
+
+Sanitized Canvas payloads live in `fixtures/` and are loaded by URL relative to the test file:
+
+```ts
+const fixture = <T>(name: string): T =>
+  JSON.parse(readFileSync(new URL(`../fixtures/${name}`, import.meta.url), "utf8")) as T;
+```
+
+Fixtures contain no real identifiers — hosts use `.invalid`, and IDs are synthetic.
+
+## Docker
+
+One image serves both transports. Build it with:
+
+```bash
+docker build -t canvas-mcp-connector .
+```
+
+The default command is the authenticated HTTP transport:
+
+```bash
+docker run --rm -p 3000:3000 --env-file .env canvas-mcp-connector
+```
+
+The same image runs the stdio transport when given an explicit command. An MCP client drives it over stdin/stdout, so `-i` is required:
+
+```bash
+docker run -i --rm --env-file .env canvas-mcp-connector node dist/src/index.js
+```
+
+The image is a two-stage build: stage one installs all dependencies and compiles, stage two installs production dependencies only and copies in `dist/src`. Tests are not copied into the image, and it runs as the unprivileged `node` user. Credentials are passed at runtime and never baked into a layer.
+
+Note that `tsconfig.json` sets `rootDir: "."`, so compiled output lands in `dist/src/`, not `dist/`. The `start` / `start:http` scripts and the image `CMD` all reflect that, and the build fails if either entrypoint goes missing.
+
+## CI
+
+`.github/workflows/ci.yml` runs on pushes to `main`, on pull requests, and on manual dispatch. Three jobs:
+
+- **verify** — `npm ci`, `typecheck`, `test`, `build` across Node 20 and 22 (the `engines` floor and current LTS), then asserts both build entrypoints exist and match the start scripts.
+- **no committed credentials** — fails if a `.env` file is ever tracked, or if `.env.example` picks up something that looks like a real token rather than a `replace-with-` placeholder.
+- **docker build** — builds the image and smoke-tests both transports. For HTTP: `GET /health` returns ok, `POST /mcp` without a token returns 401, and `POST /mcp` with the connector token completes an MCP `initialize`. For stdio: a real `initialize` / `tools/list` handshake over stdin. Neither needs a live Canvas instance.

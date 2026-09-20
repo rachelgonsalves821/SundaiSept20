@@ -1,6 +1,12 @@
 node_modules
 dist
-.git
-.env
 coverage
+.git
+.github
+.env
+.env.*
+!.env.example
 *.log
+Dockerfile
+.dockerignore
+README.md
