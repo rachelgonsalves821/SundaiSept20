@@ -37,6 +37,18 @@ describe("CanvasClient", () => {
     await expect(client.listCourses()).resolves.toEqual([]);
   });
 
+  it("rejects course records that do not match CanvasCourseSchema", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify([{ id: "not-a-number", name: "Invalid course" }]), { status: 200 }),
+    );
+    const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", fetchImpl });
+
+    await expect(client.listCourses()).rejects.toMatchObject({
+      code: "CANVAS_API_ERROR",
+      message: "Canvas API returned an invalid list response",
+    });
+  });
+
   it("stops repeated next URLs instead of looping forever", async () => {
     const repeatedUrl = "https://canvas.test/api/v1/courses?page=2";
     const fetchImpl = vi.fn<typeof fetch>()

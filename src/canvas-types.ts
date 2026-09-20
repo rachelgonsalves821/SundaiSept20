@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export interface CanvasUser {
   id: number;
   name: string;
@@ -16,6 +18,16 @@ export interface CanvasCourse {
   end_at?: string | null;
   html_url?: string;
 }
+
+export const CanvasCourseSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  course_code: z.string().optional(),
+  workflow_state: z.string().optional(),
+  start_at: z.string().nullable().optional(),
+  end_at: z.string().nullable().optional(),
+  html_url: z.string().url().optional(),
+});
 
 export interface CanvasAssignment {
   id: number;

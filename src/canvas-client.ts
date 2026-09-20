@@ -1,5 +1,7 @@
+import { CanvasCourseSchema } from "./canvas-types.js";
 import type { CanvasAssignment, CanvasCourse, CanvasGateway, CanvasUser } from "./canvas-types.js";
 import { ConnectorError } from "./errors.js";
+import { z } from "zod";
 
 export type { CanvasGateway } from "./canvas-types.js";
 
@@ -40,7 +42,7 @@ export class CanvasClient implements CanvasGateway {
   }
 
   async listCourses(): Promise<CanvasCourse[]> {
-    return this.getPaginated<CanvasCourse>("/api/v1/courses?per_page=100");
+    return this.getPaginated("/api/v1/courses?per_page=100", CanvasCourseSchema);
   }
 
   async listAssignments(courseId: number): Promise<CanvasAssignment[]> {
@@ -52,7 +54,7 @@ export class CanvasClient implements CanvasGateway {
     return this.parseJson<T>(response);
   }
 
-  private async getPaginated<T>(path: string): Promise<T[]> {
+  private async getPaginated<T>(path: string, schema?: z.ZodType<T>): Promise<T[]> {
     const results: T[] = [];
     let nextUrl: string | undefined = this.toAbsoluteUrl(path);
     const visitedUrls = new Set<string>();
@@ -68,7 +70,15 @@ export class CanvasClient implements CanvasGateway {
       if (!Array.isArray(page)) {
         throw new CanvasApiError("Canvas API returned an invalid list response", 502, nextUrl);
       }
-      results.push(...page as T[]);
+      if (schema) {
+        try {
+          results.push(...page.map((item) => schema.parse(item)));
+        } catch {
+          throw new CanvasApiError("Canvas API returned an invalid list response", 502, nextUrl);
+        }
+      } else {
+        results.push(...page as T[]);
+      }
       nextUrl = this.parseNextLink(response.headers.get("link"));
     }
     return results;
