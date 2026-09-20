@@ -1,4 +1,4 @@
-# Canvas MCP Connector
+# SundaiSept20 — Canvas MCP Connector
 
 Reusable TypeScript MCP server for authorized, capability-scoped access to Canvas data. The local development transport uses MCP stdio; the server is structured so a remote HTTP transport can be added without moving Canvas-specific code into tool definitions.
 
