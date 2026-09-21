@@ -139,6 +139,31 @@ describe("CanvasClient", () => {
     await expect(client.listCourses()).resolves.toEqual([]);
   });
 
+  it("accepts null optional course fields and normalizes them to undefined", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify([{
+        id: 2003,
+        name: "Course with incomplete metadata",
+        course_code: null,
+        workflow_state: null,
+        start_at: null,
+        end_at: null,
+        html_url: null,
+      }]), { status: 200 }),
+    );
+    const client = new CanvasClient({ baseUrl: "https://canvas.test", apiToken: "secret", fetchImpl });
+
+    await expect(client.listCourses()).resolves.toEqual([{
+      id: 2003,
+      name: "Course with incomplete metadata",
+      course_code: undefined,
+      workflow_state: undefined,
+      start_at: null,
+      end_at: null,
+      html_url: undefined,
+    }]);
+  });
+
   it("rejects course records that do not match CanvasCourseSchema", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify([{ id: "not-a-number", name: "Invalid course" }]), { status: 200 }),
