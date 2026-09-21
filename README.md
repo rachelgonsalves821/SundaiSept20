@@ -17,7 +17,7 @@ The initial read-only capabilities are `read_profile`, `read_courses`, and `read
 The hosted transport exposes:
 
 - `GET /health` — public liveness check; returns no credentials.
-- `POST /mcp` — stateless MCP Streamable HTTP endpoint.
+- `POST /mcp` — MCP Streamable HTTP endpoint. The server also supports the protocol's `GET` and `DELETE` session methods.
 
 Every `/mcp` request must include:
 
@@ -27,7 +27,7 @@ Content-Type: application/json
 Accept: application/json, text/event-stream
 ```
 
-Missing or invalid connector tokens return `401 Unauthorized`. The current HTTP transport is intentionally stateless, so MCP clients should send each request without relying on a persistent MCP session. Start it locally with `npm run dev:http` or in production with `npm run start:http`.
+Missing or invalid connector tokens return `401 Unauthorized`. The HTTP transport uses MCP session IDs for compatibility with clients that require stateful Streamable HTTP. Clients must return the `Mcp-Session-Id` response header on subsequent requests. Start it locally with `npm run dev:http` or in production with `npm run start:http`.
 
 ## Configuration
 

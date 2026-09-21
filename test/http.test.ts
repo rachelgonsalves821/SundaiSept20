@@ -65,9 +65,24 @@ describe("Streamable HTTP transport", () => {
     });
 
     expect(response.status).toBe(200);
+    const sessionId = response.headers.get("mcp-session-id");
+    expect(sessionId).toBeTruthy();
     const body = await response.text();
     expect(body).toContain('"serverInfo"');
     expect(body).toContain('"canvas-mcp-connector"');
+
+    const tools = await fetch(`${baseUrl}/mcp`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer connector-test-token",
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        "Mcp-Session-Id": sessionId!,
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+    });
+    expect(tools.status).toBe(200);
+    expect(await tools.text()).toContain('"list_courses"');
   });
 
   it("supports Streamable HTTP GET negotiation", async () => {
@@ -75,8 +90,8 @@ describe("Streamable HTTP transport", () => {
     const response = await fetch(`${baseUrl}/mcp`, {
       headers: { Authorization: "Bearer connector-test-token" },
     });
-    expect(response.status).toBe(406);
-    expect(await response.json()).toMatchObject({ error: { code: -32000 } });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: { code: "MCP_SESSION_REQUIRED", message: "A valid MCP session is required" } });
   });
 
   it("rejects unsupported MCP HTTP methods", async () => {

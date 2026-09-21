@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { assertConnectorToken } from "./auth.js";
 import { ConnectorConfig } from "./config.js";
@@ -7,7 +8,15 @@ import { createMcpServer } from "./server.js";
 
 const MAX_BODY_BYTES = 1_000_000;
 
+interface McpSession {
+  transport: StreamableHTTPServerTransport;
+  server: ReturnType<typeof createMcpServer>;
+  connected: boolean;
+}
+
 export function createHttpServer(config: ConnectorConfig): Server {
+  const sessions = new Map<string, McpSession>();
+
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
@@ -41,20 +50,39 @@ export function createHttpServer(config: ConnectorConfig): Server {
       }
 
       const body = request.method === "POST" ? await readJsonBody(request) : undefined;
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-      const server = createMcpServer({
-        canvasBaseUrl: config.canvasBaseUrl,
-        canvasApiToken: config.canvasApiToken,
-        capabilities: config.capabilities,
-      });
+      const sessionId = readSessionId(request);
+      let session = sessionId === undefined ? undefined : sessions.get(sessionId);
 
-      response.on("close", () => {
-        void transport.close();
-        void server.close();
-      });
+      if (session === undefined) {
+        if (request.method !== "POST" || !isInitializeRequest(body)) {
+          writeJson(response, 400, { error: { code: "MCP_SESSION_REQUIRED", message: "A valid MCP session is required" } });
+          return;
+        }
 
-      await server.connect(transport);
-      await transport.handleRequest(request, response, body);
+        const server = createMcpServer({
+          canvasBaseUrl: config.canvasBaseUrl,
+          canvasApiToken: config.canvasApiToken,
+          capabilities: config.capabilities,
+        });
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: randomUUID,
+          onsessioninitialized: (id) => {
+            sessions.set(id, session!);
+          },
+          onsessionclosed: (id) => {
+            const closed = sessions.get(id);
+            sessions.delete(id);
+            void closed?.server.close();
+          },
+        });
+        session = { transport, server, connected: false };
+      }
+
+      if (!session.connected) {
+        await session.server.connect(session.transport);
+        session.connected = true;
+      }
+      await session.transport.handleRequest(request, response, body);
     } catch (error) {
       if (response.headersSent) return;
       const connectorError = toConnectorError(error);
@@ -78,6 +106,15 @@ export function startHttpServer(config: ConnectorConfig, host = "0.0.0.0"): Prom
 function readAuthorizationHeader(request: IncomingMessage): string | undefined {
   const value = request.headers.authorization;
   return Array.isArray(value) ? undefined : value;
+}
+
+function readSessionId(request: IncomingMessage): string | undefined {
+  const value = request.headers["mcp-session-id"];
+  return Array.isArray(value) ? undefined : value;
+}
+
+function isInitializeRequest(body: unknown): body is { method: "initialize" } {
+  return typeof body === "object" && body !== null && "method" in body && body.method === "initialize";
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
