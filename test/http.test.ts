@@ -1,4 +1,5 @@
 import type { AddressInfo } from "node:net";
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { createHttpServer } from "../src/http.js";
@@ -29,7 +30,11 @@ describe("Streamable HTTP transport", () => {
     const baseUrl = await startTestServer();
     const response = await fetch(`${baseUrl}/health`);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "ok", service: "canvas-mcp-connector" });
+    expect(await response.json()).toEqual({
+      status: "ok",
+      service: "canvas-mcp-connector",
+      auth_token_fingerprint: createHash("sha256").update("connector-test-token").digest("hex").slice(0, 12),
+    });
   });
 
   it("rejects missing and incorrect connector tokens", async () => {

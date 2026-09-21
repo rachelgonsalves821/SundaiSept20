@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { inspect } from "node:util";
 import { CapabilityPolicy } from "./capabilities.js";
 
@@ -44,6 +45,14 @@ export class ConnectorConfig {
   /** Inbound agent credential. Only the auth check should read this. */
   get connectorAuthToken(): string {
     return this.#connectorAuthToken;
+  }
+
+  /**
+   * Temporary, non-secret diagnostic value for comparing deployments.
+   * This is intentionally only a short SHA-256 prefix, never the token.
+   */
+  get connectorAuthTokenFingerprint(): string {
+    return createHash("sha256").update(this.#connectorAuthToken, "utf8").digest("hex").slice(0, 12);
   }
 
   toJSON(): Record<string, unknown> {

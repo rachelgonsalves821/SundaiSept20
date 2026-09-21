@@ -22,7 +22,11 @@ export function createHttpServer(config: ConnectorConfig): Server {
       const url = new URL(request.url ?? "/", "http://localhost");
 
       if (url.pathname === "/health" && request.method === "GET") {
-        writeJson(response, 200, { status: "ok", service: "canvas-mcp-connector" });
+        writeJson(response, 200, {
+          status: "ok",
+          service: "canvas-mcp-connector",
+          auth_token_fingerprint: config.connectorAuthTokenFingerprint,
+        });
         return;
       }
 
