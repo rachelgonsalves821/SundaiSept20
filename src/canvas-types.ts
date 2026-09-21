@@ -8,6 +8,10 @@ const optionalCanvasUrl = z.preprocess(
   (value) => value === null ? undefined : value,
   z.string().url().optional(),
 ) as z.ZodType<string | undefined>;
+const canvasCourseName = z.preprocess(
+  (value) => value === null || value === undefined || value === "" ? "Unnamed Canvas course" : value,
+  z.string(),
+) as z.ZodType<string>;
 
 export interface CanvasUser {
   id: number;
@@ -39,7 +43,7 @@ export interface CanvasCourse {
 
 export const CanvasCourseSchema = z.object({
   id: z.number(),
-  name: z.string(),
+  name: canvasCourseName,
   // Canvas may return null for optional fields even when the field is present.
   // Normalize those nulls to undefined so the connector contract stays stable.
   course_code: optionalCanvasString,

@@ -33,6 +33,7 @@ describe("Streamable HTTP transport", () => {
     expect(await response.json()).toEqual({
       status: "ok",
       service: "canvas-mcp-connector",
+      build: "4071649-course-normalization-2",
       auth_token_fingerprint: createHash("sha256").update("connector-test-token").digest("hex").slice(0, 12),
     });
   });

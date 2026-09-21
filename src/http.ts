@@ -25,6 +25,7 @@ export function createHttpServer(config: ConnectorConfig): Server {
         writeJson(response, 200, {
           status: "ok",
           service: "canvas-mcp-connector",
+          build: "4071649-course-normalization-2",
           auth_token_fingerprint: config.connectorAuthTokenFingerprint,
         });
         return;
